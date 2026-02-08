@@ -1,6 +1,7 @@
 from pydantic_ai import Agent
 from pydantic import BaseModel, Field
 from obx.core.config import settings
+from obx.utils.models import resolve_model
 
 # --- Editor Agent ("obx insert") ---
 
@@ -11,7 +12,7 @@ class EditProposal(BaseModel):
     content_to_insert: str = Field(description="The formatted content to insert.")
 
 editor_agent = Agent(
-    model=settings.primary_model, # Use smart model for robust anchor finding
+    model=resolve_model(settings.primary_model), # Use smart model for robust anchor finding
     system_prompt=(
         "You are an expert editor. Your task is to insert new content into an existing Markdown note seamlessly. "
         "1. Read the provided Note Content. "

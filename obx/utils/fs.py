@@ -2,6 +2,7 @@ import os
 import re
 from pathlib import Path
 from typing import List, Optional
+from datetime import datetime
 from obx.core.config import settings
 
 def _get_vault_path() -> Path:
@@ -74,6 +75,35 @@ def read_note(filename: str, header: Optional[str] = None) -> str:
     except Exception as e:
         return f"Error reading file: {e}"
 
+def list_note_headers(filename: str) -> str:
+    """List markdown headers from a note with their levels."""
+    vault = _get_vault_path()
+    if not filename.endswith(".md"):
+        filename += ".md"
+    file_path = vault / filename
+
+    if not file_path.exists():
+        found = list(vault.rglob(filename))
+        if found:
+            file_path = found[0]
+        else:
+            return f"Error: Note '{filename}' not found."
+
+    try:
+        content = file_path.read_text(encoding="utf-8")
+        headers = []
+        for line in content.splitlines():
+            match = re.match(r'^(#{1,6})\s+(.*)', line)
+            if match:
+                level = len(match.group(1))
+                text = match.group(2).strip()
+                headers.append(f"{level} {text}")
+        if not headers:
+            return "No headers found."
+        return "\n".join(headers)
+    except Exception as e:
+        return f"Error reading file: {e}"
+
 def write_note(filename: str, content: str) -> str:
     """Creates or overwrites a note with the given content."""
     vault = _get_vault_path()
@@ -84,6 +114,30 @@ def write_note(filename: str, content: str) -> str:
     try:
         file_path.write_text(content, encoding="utf-8")
         return f"Successfully wrote to {filename}"
+    except Exception as e:
+        return f"Error writing file: {e}"
+
+def write_generated_note(content: str, filename: Optional[str] = None) -> str:
+    """Write a generated note into the configured output directory."""
+    vault = _get_vault_path()
+    if not settings.output_dir:
+        return "Error: Output directory not configured."
+
+    out_dir = vault / settings.output_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if not filename:
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        filename = f"study-guide-{timestamp}.md"
+
+    if not filename.endswith(".md"):
+        filename += ".md"
+
+    file_path = out_dir / filename
+    try:
+        tagged_content = "---\ntags: [obx]\n---\n\n" + content.strip() + "\n"
+        file_path.write_text(tagged_content, encoding="utf-8")
+        return f"Successfully wrote to {file_path}"
     except Exception as e:
         return f"Error writing file: {e}"
 

@@ -41,16 +41,17 @@ obx config
 ```
 This will ask for:
 1.  **Obsidian Vault Path**: The absolute path to your notes.
-2.  **API Keys**: Google Gemini (recommended/default), OpenAI, or Anthropic.
+2.  **API Keys**: Google Gemini (recommended/default), OpenAI, Anthropic, or OpenRouter.
 
 Settings are stored in `~/.obx/.env`.
 
 ## Features
 
 - **Chat**: Interactive agent knowing your vault (`obx chat`)
-- **Semantic Search**: Find related notes concept-first (`obx explain "topic"`)
-- **Fuzzy Find**: Quickly path files (`obx find "note name"`)
+- **Ask**: Get answers to questions based on your vault with smart source citations (`obx ask "question"`)
+- **Semantic Search**: Find related notes concept-first (`obx search "topic"`)
 - **Direct IO**: Read (`obx read`) and Open (`obx open`) notes.
+- **Smart Insert**: Insert content into notes with AI-guided placement (`obx insert`)
 
 ## Tech Stack
 - **Engine**: `pydantic-ai` + `Typer`
@@ -61,6 +62,6 @@ Settings are stored in `~/.obx/.env`.
 `src/obx/`
 - `cli/`: Command-line interface and commands.
 - `core/`: Configuration and core abstractions.
-- `rag/`: RAG engine and indexing logic.
-- `agents/`: AI agent implementations (Chat, Explain, Guide, Editor).
+- `rag/`: RAG engine and indexing logic (with header-aware chunking).
+- `agents/`: AI agent implementations (Chat, Ask, Guide, Editor).
 - `utils/`: Shared utilities (UI, Filesystem, Diff).

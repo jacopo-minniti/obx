@@ -3,6 +3,8 @@ import os
 import json
 import time
 import asyncio
+import threading
+import logging
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime
@@ -105,6 +107,8 @@ class RAG:
         self.tracker = self._load_tracker()
         self.metadata_store = self._load_metadata()
         self._index_loaded = False
+        # Guard txtai embeddings against concurrent access (non-thread-safe in practice)
+        self._lock = threading.RLock()
 
     def _setup_env(self):
         if settings.openai_api_key: os.environ["OPENAI_API_KEY"] = settings.openai_api_key
@@ -114,6 +118,15 @@ class RAG:
                del os.environ["GOOGLE_API_KEY"]
         if settings.cohere_api_key: os.environ["CO_API_KEY"] = settings.cohere_api_key
         if settings.voyage_api_key: os.environ["VOYAGE_API_KEY"] = settings.voyage_api_key
+
+        # Silence noisy HF/txtai model cache logs (not errors)
+        logging.getLogger("hf_utils").setLevel(logging.ERROR)
+        logging.getLogger("txtai").setLevel(logging.ERROR)
+        logging.getLogger("txtai.pipeline.hf_utils").setLevel(logging.ERROR)
+        logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+        logging.getLogger("transformers").setLevel(logging.ERROR)
+        os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+        os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 
     def _load_tracker(self) -> Dict[str, float]:
         if self.tracker_path.exists():
@@ -168,50 +181,52 @@ class RAG:
         return filtered_files
 
     def clear(self):
-        if self.index_path.exists():
-            shutil.rmtree(self.index_path)
-        if self.tracker_path.exists():
-            self.tracker_path.unlink()
-        if self.metadata_path.exists():
-            self.metadata_path.unlink()
+        with self._lock:
+            if self.index_path.exists():
+                shutil.rmtree(self.index_path)
+            if self.tracker_path.exists():
+                self.tracker_path.unlink()
+            if self.metadata_path.exists():
+                self.metadata_path.unlink()
             
-        self.tracker = {}
-        self.metadata_store = {}
-        # Re-init with config
-        self.embeddings = Embeddings(self.txtai_config)
-        self._index_loaded = True
-        print("Index cleared.")
+            self.tracker = {}
+            self.metadata_store = {}
+            # Re-init with config
+            self.embeddings = Embeddings(self.txtai_config)
+            self._index_loaded = True
+            print("Index cleared.")
 
     async def ingest(self, clear: bool = False):
         if clear:
             self.clear()
-        
-        # Load existing index if not clearing
-        if not clear and self.index_path.exists() and not self._index_loaded:
-             self.embeddings.load(str(self.index_path))
-             self._index_loaded = True
-            
+
+        with self._lock:
+            # Load existing index if not clearing
+            if not clear and self.index_path.exists() and not self._index_loaded:
+                self.embeddings.load(str(self.index_path))
+                self._index_loaded = True
+
         print(f"Scanning vault at {settings.vault_path}...")
         files = self._get_vault_files()
-        
+
         to_process = []
         for f in files:
             mtime = f.stat().st_mtime
             if str(f) not in self.tracker or self.tracker[str(f)] < mtime:
                 to_process.append(f)
-        
+
         if not to_process:
             print("No new or modified files to index.")
             return
 
         print(f"Found {len(to_process)} files to process.")
-        
+
         documents_to_index = []
         new_tracker = self.tracker.copy()
-        
+
         with Progress() as progress:
             task = progress.add_task("[cyan]Processing files...", total=len(to_process))
-            
+
             for file_path in to_process:
                 try:
                     text_content = ""
@@ -223,45 +238,53 @@ class RAG:
                             text_content = result.text_content
                         else:
                             continue
-                    
+
                     if not text_content.strip():
                         progress.advance(task)
                         continue
 
                     chunks = self.chunker.chunk(text_content)
-                    
+
+                    # Extract headers from the text for better source attribution
+                    headers = self._extract_headers(text_content)
+
                     for i, chunk in enumerate(chunks):
                         doc_id = f"{file_path.name}#{i}"
-                        
+
+                        # Find the nearest header for this chunk
+                        chunk_header = self._find_nearest_header(chunk.start_index, headers)
+
                         metadata = {
                             "text": chunk.text,
                             "source": file_path.name,
                             "path": str(file_path),
                             "type": file_path.suffix,
-                            "chunk_index": i
+                            "chunk_index": i,
+                            "header": chunk_header
                         }
-                        
+
                         # Store metadata in sidecar
                         self.metadata_store[doc_id] = metadata
-                        
+
                         # For txtai, we just need text for hybrid search
                         # (uid, data, vector) -> (uid, metadata, None)
                         # We still pass metadata to txtai so it indexes 'text' field
                         documents_to_index.append((doc_id, metadata, None))
-                    
+
                     new_tracker[str(file_path)] = file_path.stat().st_mtime
-                    
+
                 except Exception as e:
                     print(f"Error processing {file_path.name}: {e}")
-                
+
                 progress.advance(task)
 
         if documents_to_index:
             print(f"Indexing {len(documents_to_index)} chunks...")
-            
-            self.embeddings.index(documents_to_index)
-            self.embeddings.save(str(self.index_path))
-            
+
+            with self._lock:
+                self.embeddings.index(documents_to_index)
+                self.embeddings.save(str(self.index_path))
+
             self.tracker = new_tracker
             self._save_tracker()
             self._save_metadata()
@@ -272,15 +295,49 @@ class RAG:
     def index_exists(self) -> bool:
         return self.index_path.exists()
 
+    def _extract_headers(self, text: str) -> List[Tuple[int, str, str]]:
+        """Extract headers from markdown text.
+        Returns list of (char_position, header_level, header_text) tuples.
+        """
+        import re
+        headers = []
+        current_pos = 0
+        
+        for line in text.split('\n'):
+            match = re.match(r'^(#{1,6})\s+(.*)', line)
+            if match:
+                level = match.group(1)
+                header_text = match.group(2).strip()
+                headers.append((current_pos, level, header_text))
+            current_pos += len(line) + 1  # +1 for newline
+        
+        return headers
+    
+    def _find_nearest_header(self, chunk_start: int, headers: List[Tuple[int, str, str]]) -> Optional[str]:
+        """Find the nearest header before the chunk position."""
+        if not headers:
+            return None
+        
+        # Find the last header that appears before or at the chunk start
+        nearest = None
+        for pos, level, text in headers:
+            if pos <= chunk_start:
+                nearest = text
+            else:
+                break
+        
+        return nearest
+
     def search(self, query: str, limit: int = 5, weights: float = 0.5) -> List[Dict[str, Any]]:
-        if not self.index_path.exists():
-            return []
-            
-        if not self._index_loaded:
-            self.embeddings.load(str(self.index_path))
-            self._index_loaded = True
-            
-        results = self.embeddings.search(query, limit, weights=weights)
+        with self._lock:
+            if not self.index_path.exists():
+                return []
+                
+            if not self._index_loaded:
+                self.embeddings.load(str(self.index_path))
+                self._index_loaded = True
+                
+            results = self.embeddings.search(query, limit, weights=weights)
         
         enriched = []
         for r in results:

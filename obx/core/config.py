@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     gemini_api_key: Optional[str] = Field(None, description="Google Gemini API Key")
     openai_api_key: Optional[str] = Field(None, description="OpenAI API Key")
     anthropic_api_key: Optional[str] = Field(None, description="Anthropic API Key")
+    openrouter_api_key: Optional[str] = Field(None, description="OpenRouter API Key")
     cohere_api_key: Optional[str] = Field(None, description="Cohere API Key")
     voyage_api_key: Optional[str] = Field(None, description="Voyage AI API Key")
     
@@ -28,6 +29,9 @@ class Settings(BaseSettings):
 
     # Persona
     mood: str = Field("helpful", description="Persona/Mood of the assistant")
+
+    # Default output directory for generated notes (relative to vault)
+    output_dir: Optional[str] = Field(None, description="Default output folder for generated notes (relative to vault)")
     
     # Exclusions
     exclude_folders: List[str] = Field(default_factory=list, description="List of folder paths (relative to vault) to exclude")
@@ -55,6 +59,7 @@ class Settings(BaseSettings):
             if self.gemini_api_key: f.write(f"GEMINI_API_KEY={self.gemini_api_key}\n")
             if self.openai_api_key: f.write(f"OPENAI_API_KEY={self.openai_api_key}\n")
             if self.anthropic_api_key: f.write(f"ANTHROPIC_API_KEY={self.anthropic_api_key}\n")
+            if self.openrouter_api_key: f.write(f"OPENROUTER_API_KEY={self.openrouter_api_key}\n")
             if self.cohere_api_key: f.write(f"COHERE_API_KEY={self.cohere_api_key}\n")
             if self.voyage_api_key: f.write(f"VOYAGE_API_KEY={self.voyage_api_key}\n")
             
@@ -68,6 +73,9 @@ class Settings(BaseSettings):
             # Embeddings
             f.write(f"EMBEDDING_PROVIDER={self.embedding_provider}\n")
             f.write(f"EMBEDDING_MODEL={self.embedding_model}\n")
+
+            if self.output_dir:
+                f.write(f"OUTPUT_DIR={self.output_dir}\n")
             
             if self.exclude_folders:
                 f.write(f"EXCLUDE_FOLDERS={json.dumps(self.exclude_folders)}\n")
