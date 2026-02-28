@@ -9,33 +9,32 @@ from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime
 
-# Third-party imports
-try:
-    from txtai.embeddings import Embeddings # type: ignore
-except ImportError:
-    Embeddings = None
-
-try:
-    from chonkie import SemanticChunker # type: ignore
-except ImportError:
-    SemanticChunker = None
-
-try:
-    from markitdown import MarkItDown # type: ignore
-except ImportError:
-    MarkItDown = None
-
-try:
-    from pydantic_ai import Embedder
-except ImportError:
-    Embedder = None
+# Heavy imports moved inside class or methods to improve startup time
+Embeddings = None
+SemanticChunker = None
+MarkItDown = None
+Embedder = None
 
 from rich.progress import Progress
 
 from obx.core.config import settings, OBX_DIR
+from obx.utils.ui import console
 
 class RAG:
     def __init__(self):
+        global Embeddings, SemanticChunker, MarkItDown, Embedder
+        
+        # Lazy imports for heavy libraries
+        if Embeddings is None:
+            from txtai.embeddings import Embeddings # type: ignore
+        if SemanticChunker is None:
+            from chonkie import SemanticChunker # type: ignore
+        if MarkItDown is None:
+            try:
+                from markitdown import MarkItDown # type: ignore
+            except ImportError:
+                MarkItDown = None
+
         self.index_path = OBX_DIR / "txtai_index"
         self.tracker_path = OBX_DIR / "index_tracker.json"
         self.metadata_path = OBX_DIR / "metadata_store.json"
@@ -73,7 +72,7 @@ class RAG:
             self.txtai_config["key"] = settings.cohere_api_key
             self.txtai_config["model"] = model
         elif provider == "voyageai":
-            print(f"Warning: Provider '{provider}' might not be natively supported by txtai config mapping. Trying as path.")
+            console.print(f"[yellow]Warning: Provider '{provider}' might not be natively supported by txtai config mapping. Trying as path.[/yellow]")
             self.txtai_config["path"] = model
         elif provider == "google":
              self.txtai_config["path"] = "txtai.embeddings.API"
@@ -97,7 +96,7 @@ class RAG:
             
             # Print warning if provider is not standard but we're trying fallback
             if provider not in ["sentence-transformers", "transformers", "huggingface"]:
-                print(f"Note: Provider '{provider}' not explicitly mapped. Using model path strategy: {self.txtai_config['path']}")
+                console.print(f"[dim]Note: Provider '{provider}' not explicitly mapped. Using model path strategy: {self.txtai_config['path']}[/dim]")
 
         self.embeddings = Embeddings(self.txtai_config)
         
@@ -194,7 +193,7 @@ class RAG:
             # Re-init with config
             self.embeddings = Embeddings(self.txtai_config)
             self._index_loaded = True
-            print("Index cleared.")
+            console.print("[green]Index cleared.[/green]")
 
     async def ingest(self, clear: bool = False):
         if clear:
@@ -206,7 +205,7 @@ class RAG:
                 self.embeddings.load(str(self.index_path))
                 self._index_loaded = True
 
-        print(f"Scanning vault at {settings.vault_path}...")
+        console.print(f"[dim]Scanning vault at {settings.vault_path}...[/dim]")
         files = self._get_vault_files()
 
         to_process = []
@@ -216,10 +215,10 @@ class RAG:
                 to_process.append(f)
 
         if not to_process:
-            print("No new or modified files to index.")
+            console.print("[yellow]No new or modified files to index.[/yellow]")
             return
 
-        print(f"Found {len(to_process)} files to process.")
+        console.print(f"[green]Found {len(to_process)} files to process.[/green]")
 
         documents_to_index = []
         new_tracker = self.tracker.copy()
@@ -233,11 +232,10 @@ class RAG:
                     if file_path.suffix.lower() == ".md":
                         text_content = file_path.read_text(encoding="utf-8")
                     elif file_path.suffix.lower() == ".pdf":
-                        if self.markitdown:
-                            result = self.markitdown.convert(str(file_path))
-                            text_content = result.text_content
-                        else:
-                            continue
+                        # Skip PDFs - they should be passed directly to the model as binary
+                        # attachments, not indexed via OCR
+                        progress.advance(task)
+                        continue
 
                     if not text_content.strip():
                         progress.advance(task)
@@ -274,12 +272,12 @@ class RAG:
                     new_tracker[str(file_path)] = file_path.stat().st_mtime
 
                 except Exception as e:
-                    print(f"Error processing {file_path.name}: {e}")
+                    console.print(f"[red]Error processing {file_path.name}: {e}[/red]")
 
                 progress.advance(task)
 
         if documents_to_index:
-            print(f"Indexing {len(documents_to_index)} chunks...")
+            console.print(f"[cyan]Indexing {len(documents_to_index)} chunks...[/cyan]")
 
             with self._lock:
                 self.embeddings.index(documents_to_index)
@@ -288,9 +286,9 @@ class RAG:
             self.tracker = new_tracker
             self._save_tracker()
             self._save_metadata()
-            print("Indexing complete.")
+            console.print("[green]Indexing complete.[/green]")
         else:
-            print("No valid chunks extracted.")
+            console.print("[yellow]No valid chunks extracted.[/yellow]")
             
     def index_exists(self) -> bool:
         return self.index_path.exists()

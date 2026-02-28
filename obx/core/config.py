@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     reasoning_model: str = Field("gemini-3-pro-preview", description="Smart/Reasoner model for complex tasks")
     ocr_model: str = Field("gemini-flash-lite-latest", description="Model for OCR tasks")
 
+    # Reasoning Effort (OpenRouter specific)
+    openrouter_reasoning_effort: Optional[str] = Field(None, description="Reasoning effort for OpenRouter models (high, medium, low, etc.)")
+
     # API Keys - Pydantic settings will automatically read from env vars like OPENAI_API_KEY if not set here
     # We keep them Optional to allow falling back to system env vars
     gemini_api_key: Optional[str] = Field(None, description="Google Gemini API Key")
@@ -67,6 +70,9 @@ class Settings(BaseSettings):
             f.write(f"PRIMARY_MODEL={self.primary_model}\n")
             f.write(f"REASONING_MODEL={self.reasoning_model}\n")
             f.write(f"OCR_MODEL={self.ocr_model}\n")
+            
+            if self.openrouter_reasoning_effort:
+                f.write(f"OPENROUTER_REASONING_EFFORT={self.openrouter_reasoning_effort}\n")
             
             f.write(f"MOOD={self.mood}\n")
             

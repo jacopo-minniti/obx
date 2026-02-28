@@ -32,5 +32,5 @@ study_guide_agent = Agent(
     ),
     deps_type=None,
     tools=[duckduckgo_search_tool()],
-    toolsets=[vault_server]
+    toolsets=[vault_server()]
 )

@@ -30,9 +30,6 @@ def search_vault(query: str, limit: int = 7, weights: float = 0.5) -> str:
     """
     Search the vault for notes and snippets relevant to the query.
     Uses hybrid search (semantic + keyword).
-    When crafting a query, favor intent-rich phrasing and expand with related terms,
-    synonyms, abbreviations, adjacent concepts, and representative subtopics. If results
-    are sparse, try alternate phrasings or more concrete instances to improve recall.
     """
     try:
         rag_engine = _get_rag()
@@ -52,12 +49,7 @@ def search_vault(query: str, limit: int = 7, weights: float = 0.5) -> str:
         score = r.get("score", 0.0)
 
         source_display = f"{source} > {header}" if header else source
-        header_line = f"Header: {header}\n" if header else ""
-        formatted.append(
-            f"--- Note: {source_display} (Score: {score:.2f}) ---\n"
-            f"{header_line}"
-            f"{text}\n"
-        )
+        formatted.append(f"--- Note: {source_display} (Score: {score:.2f}) ---\n{text}\n")
 
     return "\n".join(formatted)
 
@@ -90,6 +82,103 @@ def list_notes_tool(limit: int = 20) -> List[str]:
 def fuzzy_find_tool(filename: str) -> str:
     """Find a file path by fuzzy matching the name."""
     return fuzzy_find(filename)
+
+
+# --- Learning Tools ---
+
+@mcp.tool()
+def get_flashcards_tool(filename: str) -> str:
+    """
+    Get all flashcards from a note.
+    Returns flashcards with their current SRS state.
+    """
+    from obx.core.learning_parser import parse_flashcards
+    
+    content = read_note(filename)
+    if content.startswith("Error:"):
+        return content
+    
+    parsed = parse_flashcards(content)
+    if not parsed:
+        return "No flashcards found in this note."
+    
+    result = []
+    for p in parsed:
+        card = p.item
+        result.append(
+            f"Q: {card.question}\n"
+            f"A: {card.answer}\n"
+            f"State: {card.state.value}, Due: {card.due_date}, Ease: {card.ease}"
+        )
+    return "\n---\n".join(result)
+
+
+@mcp.tool()
+def get_exercises_tool(filename: str) -> str:
+    """
+    Get all exercises from a note.
+    Returns exercises with their current grade and progress.
+    """
+    from obx.core.learning_parser import parse_exercises
+    
+    content = read_note(filename)
+    if content.startswith("Error:"):
+        return content
+    
+    parsed = parse_exercises(content)
+    if not parsed:
+        return "No exercises found in this note."
+    
+    result = []
+    for p in parsed:
+        ex = p.item
+        result.append(
+            f"Prompt: {ex.prompt[:200]}{'...' if len(ex.prompt) > 200 else ''}\n"
+            f"Difficulty: {ex.difficulty}, Grade: {ex.grade.name}, Attempts: {ex.attempts}"
+        )
+    return "\n---\n".join(result)
+
+
+@mcp.tool()
+def get_learning_status_tool(filename: str) -> str:
+    """
+    Get the overall learning status for a note.
+    Returns memory and exercise scores from YAML frontmatter.
+    """
+    from obx.utils.fs import get_learning_scores
+    
+    scores = get_learning_scores(filename)
+    return (
+        f"Memory Score: {scores['memory']:.0%}\n"
+        f"Exercise Score: {scores['exercise']:.0%}"
+    )
+
+
+@mcp.tool()
+def get_due_flashcards_tool(filename: str) -> str:
+    """
+    Get flashcards that are currently due for review.
+    """
+    from obx.core.learning_parser import parse_flashcards
+    from datetime import datetime
+    
+    content = read_note(filename)
+    if content.startswith("Error:"):
+        return content
+    
+    parsed = parse_flashcards(content)
+    now = datetime.now()
+    due = [p for p in parsed if p.item.is_due(now)]
+    
+    if not due:
+        return "No flashcards due for review."
+    
+    result = []
+    for p in due:
+        card = p.item
+        result.append(f"Q: {card.question}")
+    
+    return f"{len(due)} flashcards due:\n" + "\n".join(result)
 
 
 if __name__ == "__main__":

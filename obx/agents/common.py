@@ -3,11 +3,20 @@ import os
 import sys
 from obx.core.config import settings
 
-# Initialize Vault MCP Server
-vault_server = MCPServerStdio(
-    sys.executable,
-    args=["-m", "obx.mcp.vault_server"],
-)
+# MCP Server Factories
+# We use factories instead of global instances to avoid "BrokenResourceError"
+# when multiple agents are run sequentially in the same process.
+def vault_server():
+    return MCPServerStdio(
+        sys.executable,
+        args=["-m", "obx.mcp.vault_server"],
+    )
+
+def structure_server():
+    return MCPServerStdio(
+        sys.executable,
+        args=["-m", "obx.mcp.structure_server"],
+    )
 
 # DuckDuckGo MCP Server is disabled until its dependency constraints
 # are compatible with the latest pydantic-ai stack.

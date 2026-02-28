@@ -132,6 +132,25 @@ def _configure_model(kind: str):
     model_id = _prompt_keep_current(f"{kind.title()} Model ID", current or default_model)
     setattr(settings, f"{kind}_model", model_id)
 
+    if provider == "OpenRouter":
+        console.print("\n[bold]OpenRouter Reasoning Effort[/bold]")
+        console.print("[dim]Control reasoning tokens for thinking models (e.g. o1, deepseek-r1).[/dim]")
+        
+        choices = ["(none)", "high", "medium", "low", "minimal"]
+        # Map None to "(none)" for display
+        current_effort = settings.openrouter_reasoning_effort or "(none)"
+        
+        selected = questionary.select(
+            "Reasoning Effort:",
+            choices=choices,
+            default=current_effort
+        ).ask()
+        
+        if selected == "(none)":
+            settings.openrouter_reasoning_effort = None
+        else:
+            settings.openrouter_reasoning_effort = selected
+
 def _configure_keys():
     console.print("\n[bold]API Keys[/bold]")
     console.print("[dim]Leave empty to keep unset or use global environment variables (recommended). Values are masked.[/dim]")
@@ -184,6 +203,8 @@ def _save_and_print():
     console.print(f"Primary Agent: [bold]{settings.primary_model}[/bold]")
     console.print(f"Reasoning Agent: [bold]{settings.reasoning_model}[/bold]")
     console.print(f"OCR Agent: [bold]{settings.ocr_model}[/bold]")
+    if settings.openrouter_reasoning_effort:
+        console.print(f"OpenRouter Reasoning: [bold]{settings.openrouter_reasoning_effort}[/bold]")
     if settings.exclude_folders:
         console.print(f"Excluded: {len(settings.exclude_folders)} folders")
 

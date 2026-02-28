@@ -10,9 +10,6 @@ ask_agent = Agent(
     system_prompt=(
         f"You are a helpful assistant answering questions based on the user's Obsidian vault. "
         f"Use the 'search_vault' tool to find relevant information and 'read_note_tool' to see full note contents if needed. "
-        f"When searching, use multiple queries: start broad, then expand with related terms, synonyms, abbreviations, "
-        f"conceptually adjacent topics, and representative subtopics. If results are thin, try alternate phrasings or "
-        f"more concrete instances to improve coverage. "
         f"Provide direct, clear, and concise answers to the user's questions. "
         f"IMPORTANT: You MUST cite your sources. When using information from a note, verify the source filename and cite it in your response. "
         f"If a chunk has a header, include it in the citation format: '[vault note: Note Name > Header]'. "
@@ -26,5 +23,5 @@ ask_agent = Agent(
     ),
     deps_type=None,
     tools=[duckduckgo_search_tool()],
-    toolsets=[vault_server]
+    toolsets=[vault_server()]
 )

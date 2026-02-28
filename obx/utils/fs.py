@@ -159,3 +159,238 @@ def fuzzy_find(filename: str) -> str:
     
     # Return top 5
     return "\n".join([str(f.relative_to(vault)) for f in matches[:5]])
+
+
+# --- YAML Frontmatter Helpers for Learning Scores ---
+
+def _parse_yaml_frontmatter(content: str) -> tuple[dict, str, int, int]:
+    """
+    Parse YAML frontmatter from markdown content.
+    
+    Returns (yaml_dict, body, frontmatter_start, frontmatter_end).
+    If no frontmatter, returns ({}, content, -1, -1).
+    """
+    import yaml
+    
+    if not content.startswith("---"):
+        return {}, content, -1, -1
+    
+    # Find the closing ---
+    end_match = re.search(r'\n---\s*\n', content[3:])
+    if not end_match:
+        return {}, content, -1, -1
+    
+    frontmatter_end = 3 + end_match.end()
+    frontmatter_text = content[3:3 + end_match.start()]
+    
+    try:
+        yaml_data = yaml.safe_load(frontmatter_text) or {}
+    except yaml.YAMLError:
+        yaml_data = {}
+    
+    body = content[frontmatter_end:]
+    return yaml_data, body, 0, frontmatter_end
+
+
+def _serialize_yaml_frontmatter(yaml_dict: dict) -> str:
+    """Serialize a dict to YAML frontmatter format."""
+    import yaml
+    
+    if not yaml_dict:
+        return ""
+    
+    yaml_str = yaml.dump(yaml_dict, default_flow_style=False, allow_unicode=True)
+    return f"---\n{yaml_str}---\n\n"
+
+
+def get_note_yaml(content: str) -> dict:
+    """Get the YAML frontmatter dict from note content."""
+    yaml_data, _, _, _ = _parse_yaml_frontmatter(content)
+    return yaml_data
+
+
+def update_note_yaml(content: str, updates: dict) -> str:
+    """
+    Update YAML frontmatter with new values, preserving existing.
+    
+    Creates frontmatter if it doesn't exist.
+    """
+    yaml_data, body, start, end = _parse_yaml_frontmatter(content)
+    
+    # Merge updates
+    yaml_data.update(updates)
+    
+    # Rebuild content
+    new_frontmatter = _serialize_yaml_frontmatter(yaml_data)
+    
+    if start == -1:
+        # No existing frontmatter - add it
+        return new_frontmatter + content
+    else:
+        # Replace existing frontmatter
+        return new_frontmatter + body
+
+
+def get_learning_scores(filename: str) -> dict:
+    """
+    Get learning scores from a note's YAML frontmatter.
+    
+    Returns {"memory": float, "exercise": float}.
+    """
+    vault = _get_vault_path()
+    if not filename.endswith(".md"):
+        filename += ".md"
+    
+    file_path = vault / filename
+    if not file_path.exists():
+        found = list(vault.rglob(filename))
+        if found:
+            file_path = found[0]
+        else:
+            return {"memory": 0.0, "exercise": 0.0}
+    
+    try:
+        content = file_path.read_text(encoding="utf-8")
+        yaml_data = get_note_yaml(content)
+        return {
+            "memory": float(yaml_data.get("memory", 0.0)),
+            "exercise": float(yaml_data.get("exercise", 0.0)),
+        }
+    except Exception:
+        return {"memory": 0.0, "exercise": 0.0}
+
+
+def update_learning_scores(filename: str, memory: float, exercise: float) -> str:
+    """
+    Update learning scores in a note's YAML frontmatter.
+    
+    Returns success/error message.
+    """
+    vault = _get_vault_path()
+    if not filename.endswith(".md"):
+        filename += ".md"
+    
+    file_path = vault / filename
+    if not file_path.exists():
+        found = list(vault.rglob(filename))
+        if found:
+            file_path = found[0]
+        else:
+            return f"Error: Note '{filename}' not found."
+    
+    try:
+        content = file_path.read_text(encoding="utf-8")
+        updated = update_note_yaml(content, {
+            "memory": round(memory, 2),
+            "exercise": round(exercise, 2),
+        })
+        file_path.write_text(updated, encoding="utf-8")
+        return f"Updated learning scores in {file_path.name}"
+    except Exception as e:
+        return f"Error updating scores: {e}"
+
+
+def resolve_note_path(name: str) -> Optional[Path]:
+    """
+    Resolve a name to a note path using fuzzy matching.
+    
+    Returns the Path if found, None otherwise.
+    """
+    vault = _get_vault_path()
+    
+    # Try exact path
+    potential = vault / name
+    if not potential.suffix:
+        potential = potential.with_suffix(".md")
+    if potential.exists():
+        return potential
+    
+    # Try recursive exact match
+    note_name = name if name.endswith(".md") else f"{name}.md"
+    exact_matches = list(vault.rglob(note_name))
+    if exact_matches:
+        return exact_matches[0]
+    
+    # Fuzzy match
+    all_files = list(vault.rglob("*.md"))
+    matches = [f for f in all_files if name.lower() in f.name.lower()]
+    if matches:
+        # Return best match (shortest name that contains the query)
+        return min(matches, key=lambda f: len(f.name))
+    
+    return None
+
+
+def list_vault_hierarchy() -> str:
+    """Returns a tree-like string of the vault's folder structure (subdirectories only)."""
+    try:
+        vault = _get_vault_path()
+        result = [f"Vault: {vault.name}"]
+        
+        def walk(path: Path, indent: str = ""):
+            # Get immediate subdirectories, excluding hidden/ignored ones
+            try:
+                subdirs = sorted([
+                    d for d in path.iterdir() 
+                    if d.is_dir() 
+                    and not d.name.startswith(('.', '_'))
+                    and d.name not in settings.exclude_folders
+                ])
+                for i, d in enumerate(subdirs):
+                    is_last = (i == len(subdirs) - 1)
+                    marker = "└── " if is_last else "├── "
+                    result.append(f"{indent}{marker}{d.name}")
+                    new_indent = indent + ("    " if is_last else "│   ")
+                    walk(d, new_indent)
+            except PermissionError:
+                result.append(f"{indent}└── [Permission Denied]")
+                
+        walk(vault)
+        return "\n".join(result)
+    except Exception as e:
+        return f"Error listing vault hierarchy: {e}"
+
+
+def list_folder_contents(folder_path: str = ".") -> str:
+    """
+    Lists all files in a specific folder (non-recursive).
+    Includes the first 100 characters of each markdown note as a snippet.
+    """
+    try:
+        base_vault = _get_vault_path()
+        
+        # Handle relative path from vault root
+        if folder_path == "." or not folder_path:
+            target_dir = base_vault
+        else:
+            target_dir = (base_vault / folder_path).resolve()
+        
+        # Security check: ensure target_dir is within base_vault
+        if not str(target_dir).startswith(str(base_vault.resolve())):
+            return "Error: Path is outside the vault."
+            
+        if not target_dir.exists() or not target_dir.is_dir():
+            return f"Error: Folder '{folder_path}' not found."
+            
+        files = sorted([f for f in target_dir.iterdir() if f.is_file() and not f.name.startswith('.')])
+        if not files:
+            return f"No files found in '{folder_path}'."
+            
+        result = []
+        for f in files:
+            if f.suffix == ".md":
+                try:
+                    content = f.read_text(encoding="utf-8")
+                    # Get first 100 non-YAML chars
+                    _, body, _, _ = _parse_yaml_frontmatter(content)
+                    snippet = body[:100].replace("\n", " ").strip()
+                    result.append(f"- {f.name}: {snippet}...")
+                except Exception:
+                    result.append(f"- {f.name}: [Error reading content]")
+            else:
+                result.append(f"- {f.name}")
+                
+        return f"Contents of '{folder_path}':\n" + "\n".join(result)
+    except Exception as e:
+        return f"Error listing folder contents: {e}"
+

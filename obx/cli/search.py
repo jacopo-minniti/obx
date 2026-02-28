@@ -19,8 +19,7 @@ from obx.utils.ui import (
 )
 from obx.cli.utils import ensure_configured
 from obx.core.config import settings
-from obx.rag.engine import RAG
-from obx.agents.ask import ask_agent
+from obx.utils.fs import resolve_note_path
 
 def index_command(
     clear: bool = typer.Option(False, "--clear", help="Clear the existing index and re-index everything.")
@@ -33,6 +32,7 @@ def index_command(
 
         try:
             with console.status("Initializing indexing engine..."):
+                from obx.rag.engine import RAG
                 rag = RAG()
             asyncio.run(rag.ingest(clear=clear))
         except Exception as e:
@@ -40,7 +40,7 @@ def index_command(
 
 def search_command(
     topic: str,
-    where: str = typer.Option("here", "--where", help="Output destination: here or vault.")
+    where: str = typer.Option("here", "--where", "-w", help="Output: 'here' (print) or note name/path to append to")
 ):
     """Hybrid search for notes relevant to a topic."""
     with command_timer():
@@ -50,6 +50,7 @@ def search_command(
         
         try:
             with console.status("Initializing search engine..."):
+                from obx.rag.engine import RAG
                 rag = RAG()
                 results = rag.search(topic, limit=15)
                 
@@ -90,14 +91,16 @@ def search_command(
                         expand=False
                     ))
 
-            if where == "vault":
-                if not settings.output_dir:
-                    console.print("[red]Error:[/red] Output directory not configured. Run [bold]obx config[/bold].")
+            # Handle --where output
+            if where.lower() != "here":
+                target = resolve_note_path(where)
+                if target is None:
+                    console.print(f"[red]Error:[/red] Note '{where}' not found in vault.")
                     return
-                lines = [f"# Search results: {topic}", ""]
+                lines = [f"\n## Search results: {topic}", ""]
                 for source, chunks in sorted_sources:
                     chunks.sort(key=lambda x: x['score'], reverse=True)
-                    lines.append(f"## {source}")
+                    lines.append(f"### {source}")
                     for chunk in chunks[:3]:
                         score = chunk.get("score", 0)
                         text = chunk.get("text", "").strip()
@@ -106,12 +109,13 @@ def search_command(
                             lines.append("")
                             lines.append(text)
                             lines.append("")
-                from obx.utils.fs import write_generated_note
-                result = write_generated_note("\n".join(lines))
-                if result.startswith("Error"):
-                    console.print(f"[red]{result}[/red]")
-                else:
-                    console.print(f"[green]{result}[/green]")
+                try:
+                    existing = target.read_text(encoding="utf-8")
+                    new_content = existing.rstrip() + "\n\n" + "\n".join(lines) + "\n"
+                    target.write_text(new_content, encoding="utf-8")
+                    console.print(f"[green]Added search results to {target.name}[/green]")
+                except Exception as e:
+                    console.print(f"[red]Error writing to {target}: {e}[/red]")
 
             # Interactivity: Open a note
             console.print()
@@ -151,7 +155,7 @@ def search_command(
 
 def ask_command(
     question: str,
-    where: str = typer.Option("here", "--where", help="Output destination: here or vault."),
+    where: str = typer.Option("here", "--where", "-w", help="Output: 'here' (print) or note name/path to append to"),
     mode: str = typer.Option(None, "--mode", help="Force 'topic' mode to research the question instead of answering about a specific note.")
 ):
     """Ask a question and get answers based on vault content."""
@@ -217,19 +221,23 @@ def ask_command(
 
             # Stream the response
             try:
+                from obx.agents.ask import ask_agent
                 output, usage = await stream_agent_output(ask_agent, prompt)
                 log_tokens_generated(usage)
-                if where == "vault":
-                    if not settings.output_dir:
-                        console.print("[red]Error:[/red] Output directory not configured. Run [bold]obx config[/bold].")
+                # Handle --where output
+                if where.lower() != "here":
+                    write_target = resolve_note_path(where)
+                    if write_target is None:
+                        console.print(f"[red]Error:[/red] Note '{where}' not found in vault.")
                         return
                     if output:
-                        from obx.utils.fs import write_generated_note
-                        result = write_generated_note(output)
-                        if result.startswith("Error"):
-                            console.print(f"[red]{result}[/red]")
-                        else:
-                            console.print(f"[green]{result}[/green]")
+                        try:
+                            existing = write_target.read_text(encoding="utf-8")
+                            new_content = existing.rstrip() + "\n\n" + output.strip() + "\n"
+                            write_target.write_text(new_content, encoding="utf-8")
+                            console.print(f"[green]Added answer to {write_target.name}[/green]")
+                        except Exception as e:
+                            console.print(f"[red]Error writing to {write_target}: {e}[/red]")
                 
             except Exception as e:
                 console.print(f"[red]Error answering question:[/red] {e}")

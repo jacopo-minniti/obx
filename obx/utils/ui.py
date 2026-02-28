@@ -13,31 +13,32 @@ from obx.core.config import settings
 
 # Custom theme for better markdown aesthetics vs readability
 obx_theme = Theme({
-    "markdown": "white",
-    "markdown.text": "white",
-    "markdown.paragraph": "white",
-    "markdown.em": "white italic",           # Emphasized text (italic)
-    "markdown.strong": "bold white",         # Strong text (bold)
-    "markdown.s": "white strike",            # Strikethrough
+    "": "#FFFFFF",                           # Default style for all text (RGB white, not ANSI white)
+    "markdown": "#FFFFFF",
+    "markdown.text": "#FFFFFF",
+    "markdown.paragraph": "#FFFFFF",
+    "markdown.em": "#FFFFFF italic",         # Emphasized text (italic)
+    "markdown.strong": "bold #FFFFFF",       # Strong text (bold)
+    "markdown.s": "#FFFFFF strike",          # Strikethrough
     "markdown.h1": "bold cyan underline",
     "markdown.h2": "bold bright_blue",
     "markdown.h3": "bold blue",
-    "markdown.h4": "bold white",
-    "markdown.h5": "white",
-    "markdown.h6": "white",
+    "markdown.h4": "bold #FFFFFF",
+    "markdown.h5": "#FFFFFF",
+    "markdown.h6": "#FFFFFF",
     "markdown.link": "bright_blue underline",
     "markdown.link_url": "bright_blue underline",
-    "markdown.code_block": "white on #1e1e1e",
+    "markdown.code_block": "#FFFFFF on #1e1e1e",
     "markdown.code": "bold yellow", 
-    "markdown.item": "white",                # Bullets
-    "markdown.item.bullet": "white",         # Bullet points
-    "markdown.item.number": "white",         # Numbered lists
-    "markdown.list": "white",                # List content
-    "markdown.block_quote": "dim white",
-    "markdown.hr": "white",                  # Horizontal rule
+    "markdown.item": "#FFFFFF",              # Bullets
+    "markdown.item.bullet": "#FFFFFF",       # Bullet points
+    "markdown.item.number": "#FFFFFF",       # Numbered lists
+    "markdown.list": "#FFFFFF",              # List content
+    "markdown.block_quote": "dim #FFFFFF",
+    "markdown.hr": "#FFFFFF",                # Horizontal rule
 })
 
-console = Console(theme=obx_theme, style="white")
+console = Console(theme=obx_theme, style="#FFFFFF", force_terminal=True, color_system="truecolor")
 
 @contextmanager
 def command_timer():

@@ -81,7 +81,7 @@ def open_command(
                     ('question', 'bold'),
                     ('pointer', 'fg:#36cdc4 bold'),     # Pointer color
                     ('highlighted', 'fg:#36cdc4 bold'), # Selected item color
-                    ('answer', 'fg:#36cdc4 bold'),      
+                    ('answer', 'fg:white bold'),        # Use white for answers, not cyan
                 ])
 
                 answer = questionary.select(
